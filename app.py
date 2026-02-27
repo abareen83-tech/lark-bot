@@ -6,7 +6,7 @@ import os
 
 app = Flask(__name__)
 
-# 🔐 Environment Variables (مهم للأمان)
+# 🔐 Environment Variables
 APP_ID = os.environ.get("APP_ID")
 APP_SECRET = os.environ.get("APP_SECRET")
 SPREADSHEET_TOKEN = os.environ.get("SPREADSHEET_TOKEN")
@@ -21,9 +21,13 @@ def get_tenant_access_token():
         "app_secret": APP_SECRET
     }
 
-    response = requests.post(url, json=payload)
-    result = response.json()
-    return result.get("tenant_access_token")
+    try:
+        response = requests.post(url, json=payload)
+        result = response.json()
+        return result.get("tenant_access_token")
+    except Exception as e:
+        print("❌ Token Error:", e)
+        return None
 
 
 # 🧠 استخراج البيانات من الرسالة
@@ -75,27 +79,30 @@ def add_row(token, sample, date, formula, batch_number, mois, cp, ash, fat):
         "valueRange": {
             "range": f"{SHEET_ID}!A:O",
             "values": [[
-                "埃及公司",      # A
-                "埃及片区",      # B
-                sample,          # C
-                "",              # D
-                "",              # E
-                "",              # F
-                date,            # G
-                formula,         # H
-                "",              # I
-                batch_number,    # J
-                mois,            # K
-                cp,              # L
-                ash,             # M
-                fat,             # N
-                "Bareen"         # O
+                "埃及公司",
+                "埃及片区",
+                sample,
+                "",
+                "",
+                "",
+                date,
+                formula,
+                "",
+                batch_number,
+                mois,
+                cp,
+                ash,
+                fat,
+                "Bareen"
             ]]
         }
     }
 
-    response = requests.post(url, headers=headers, json=body)
-    print("📝 Sheet Response:", response.json())
+    try:
+        response = requests.post(url, headers=headers, json=body)
+        print("📝 Sheet Response:", response.json())
+    except Exception as e:
+        print("❌ Sheet Error:", e)
 
 
 # 📤 إرسال رد للمستخدم
@@ -119,7 +126,10 @@ def reply_to_user(token, open_id):
         "receive_id_type": "open_id"
     }
 
-    requests.post(url, headers=headers, params=params, json=body)
+    try:
+        requests.post(url, headers=headers, params=params, json=body)
+    except Exception as e:
+        print("❌ Reply Error:", e)
 
 
 # 🤖 Webhook
@@ -135,29 +145,46 @@ def webhook():
         return jsonify({"challenge": data["challenge"]})
 
     try:
-        if data.get("schema") == "2.0":
-            content = data["event"]["message"]["content"]
-            content_dict = json.loads(content)
-            message_text = content_dict.get("text", "")
+        # نتأكد إنه schema 2.0
+        if data.get("schema") != "2.0":
+            return "ignored"
 
-            open_id = data["event"]["sender"]["sender_id"]["open_id"]
+        event = data.get("event", {})
 
-            token = get_tenant_access_token()
-            if not token:
-                return "token error"
+        # نتأكد إن ده event رسالة
+        message = event.get("message")
+        if not message:
+            print("ℹ️ Not a message event")
+            return "ignored"
 
-            sample, date, formula, batch_number, mois, cp, ash, fat = parse_message(message_text)
+        content = message.get("content", "{}")
+        content_dict = json.loads(content)
+        message_text = content_dict.get("text", "")
 
-            add_row(token, sample, date, formula, batch_number, mois, cp, ash, fat)
+        sender = event.get("sender", {})
+        sender_id = sender.get("sender_id", {})
+        open_id = sender_id.get("open_id")
 
-            reply_to_user(token, open_id)
+        if not open_id:
+            print("ℹ️ No open_id found")
+            return "ignored"
+
+        token = get_tenant_access_token()
+        if not token:
+            return "token error"
+
+        sample, date, formula, batch_number, mois, cp, ash, fat = parse_message(message_text)
+
+        add_row(token, sample, date, formula, batch_number, mois, cp, ash, fat)
+
+        reply_to_user(token, open_id)
 
     except Exception as e:
-        print("❌ Error:", e)
+        print("❌ Webhook Error:", e)
 
     return "ok"
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
