@@ -133,8 +133,13 @@ def reply_to_user(token, open_id):
 
 
 # 🤖 Webhook
-@app.route("/", methods=["POST"])
+@app.route("/", methods=["GET", "POST"])
 def webhook():
+
+    # اختبار السيرفر من المتصفح
+    if request.method == "GET":
+        return "Server is running ✅"
+
     data = request.json
 
     if not data:
@@ -145,14 +150,12 @@ def webhook():
         return jsonify({"challenge": data["challenge"]})
 
     try:
-        # نتأكد إنه schema 2.0
         if data.get("schema") != "2.0":
             return "ignored"
 
         event = data.get("event", {})
-
-        # نتأكد إن ده event رسالة
         message = event.get("message")
+
         if not message:
             print("ℹ️ Not a message event")
             return "ignored"
